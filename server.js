@@ -15,7 +15,7 @@ const start = async () => {
       .register(require("fastify-jwt"), {
         secret: process.env.JWT_SECRET,
       })
-      .register(require("./routes/auth"))
+      .register(require("./plugins/routeLoader"))
       .listen(5000, "0.0.0.0");
   } catch (err) {
     fastify.log.error(err);
