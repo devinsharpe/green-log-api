@@ -7,9 +7,12 @@
   "author": "Devin Sharpe",
   "license": "MIT",
   "scripts": {
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "upload-images": "node utils/uploadImages.js",
+    "upload-plants": "node utils/uploadPlants.js"
   },
   "dependencies": {
+    "aws-sdk": "^2.945.0",
     "bcrypt": "^5.0.1",
     "date-fns": "^2.22.1",
     "dotenv": "^10.0.0",
@@ -19,9 +22,15 @@
     "fastify-elasticsearch": "^2.0.0",
     "fastify-jwt": "^3.0.0",
     "fastify-mongodb": "^2.0.1",
-    "mongodb": "^3.6.9"
+    "fastify-plugin": "^3.0.0",
+    "mmmagic": "^0.5.3",
+    "mongodb": "^3.6.9",
+    "neat-csv": "^6.0.1",
+    "sharp": "^0.28.3",
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
-    "nodemon": "^2.0.9"
+    "nodemon": "^2.0.9",
+    "ora": "^5.4.1"
   }
 }
