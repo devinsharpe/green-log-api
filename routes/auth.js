@@ -1,11 +1,8 @@
 const bcrypt = require("bcrypt");
 const { add, getUnixTime } = require("date-fns");
+const { ObjectID } = require("mongodb");
 
 async function routes(fastify, options) {
-  fastify.get("/", async (req, reply) => {
-    reply.code(200).send({ status: "alive" });
-  });
-
   fastify.post(
     "/login/",
     {
@@ -22,6 +19,25 @@ async function routes(fastify, options) {
           200: {
             type: "object",
             properties: {
+              account: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  _id: { type: "string" },
+                  email: { type: "string" },
+                  name: { type: "string" },
+                  home: {
+                    type: "object",
+                    nullable: true,
+                    properties: {
+                      _id: { type: "string" },
+                      name: { type: "string" },
+                      admin: { type: "string" },
+                      count: { type: "number" },
+                    },
+                  },
+                },
+              },
               user: {
                 type: "object",
                 properties: {
@@ -37,12 +53,9 @@ async function routes(fastify, options) {
       },
     },
     async function (req, reply) {
-      let user;
-      await this.mongo.db
+      let user = await this.mongo.db
         .collection("users")
-        .find({ email: req.body.email.toLowerCase().trim() })
-        .limit(1)
-        .forEach((doc) => (user = doc));
+        .findOne({ email: req.body.email.toLowerCase().trim() });
       if (!user) {
         reply
           .code(400)
@@ -53,23 +66,33 @@ async function routes(fastify, options) {
           user.password
         );
         if (isValidPassword) {
-          let token = await this.jwt.sign(
-            { user: user._id },
-            { expiresIn: `${process.env.JWT_TTL}s` }
+          let account = await this.mongo.db
+            .collection("accounts")
+            .findOne({ _id: user._id });
+          let home;
+          if (account) {
+            home = await this.mongo.db
+              .collection("homes")
+              .findOne({ _id: account.home });
+          }
+          let sessionId = await this.utils.createSession(user);
+          let [token, expiry] = await this.utils.createToken(
+            user._id,
+            sessionId
           );
-          let tokenExpiry = add(new Date(), { seconds: process.env.JWT_TTL });
           reply
             .code(200)
             .setCookie("token", token, {
               path: "/",
               signed: true,
               httpOnly: true,
-              expires: tokenExpiry,
+              expires: expiry,
             })
             .send({
+              account: account ? { ...account, home } : null,
               user: { _id: user._id, email: user.email },
               token,
-              tokenExpiry: getUnixTime(tokenExpiry),
+              tokenExpiry: getUnixTime(expiry),
             });
         } else {
           reply
@@ -116,11 +139,10 @@ async function routes(fastify, options) {
         /^(?=.*\d)(?=.*[a-z])[\w~@#$%^&*+=`|{}:;!.?\"()\[\]-]{8,}$/gm.test(
           req.body.password
         ) && req.body.password === req.body.passwordConfirm;
-      let oldUserCount = await this.mongo.db
+      let oldUser = await this.mongo.db
         .collection("users")
-        .find({ email: req.body.email.toLowerCase().trim() })
-        .count();
-      if (oldUserCount) {
+        .findOne({ email: req.body.email.toLowerCase().trim() });
+      if (oldUser) {
         reply
           .code(400)
           .send({ error: "A user with that email address already exists." });
@@ -138,26 +160,18 @@ async function routes(fastify, options) {
           email: req.body.email.toLowerCase().trim(),
           password: hash,
         });
-        let user = null;
-        await this.mongo.db
+        let user = await this.mongo.db
           .collection("users")
-          .find({ _id: userInsert.insertedId })
-          .limit(1)
-          .forEach((doc) => {
-            user = doc;
-          });
-        let token = await this.jwt.sign(
-          { user: user._id },
-          { expiresIn: `${process.env.JWT_TTL}s` }
-        );
-        let tokenExpiry = add(new Date(), { seconds: process.env.JWT_TTL });
+          .findOne({ _id: userInsert.insertedId });
+        let sessionId = await this.utils.createSession(user._id);
+        let [token, expiry] = await this.utils.createToken(user._id, sessionId);
         reply
           .code(200)
           .setCookie("token", token, {
             path: "/",
             signed: true,
             httpOnly: true,
-            expires: tokenExpiry,
+            expires: expiry,
           })
           .send({
             user: {
@@ -165,9 +179,133 @@ async function routes(fastify, options) {
               email: user.email,
             },
             token,
-            tokenExpiry: getUnixTime(tokenExpiry),
+            tokenExpiry: getUnixTime(expiry),
           });
       }
+    }
+  );
+
+  fastify.post(
+    "/account/",
+    {
+      preValidation: [fastify.authenticate],
+      schema: {
+        body: {
+          type: "object",
+          required: ["name", "homeName"],
+          properties: {
+            name: { type: "string" },
+            homeName: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              _id: { type: "string" },
+              name: { type: "string" },
+              home: {
+                type: "object",
+                properties: {
+                  _id: { type: "string" },
+                  name: { type: "string" },
+                  admin: { type: "string" },
+                  count: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async function (req, reply) {
+      let oldAccount = await this.mongo.db
+        .collection("accounts")
+        .findOne({ _id: ObjectID(req.user._id) });
+      if (oldAccount) {
+        reply
+          .code(403)
+          .send({ error: "An account already exists with this user." });
+      } else {
+        let homeInsert = await this.mongo.db.collection("homes").insertOne({
+          name: req.body.homeName,
+          admin: req.user._id,
+          count: 0,
+        });
+        let home = await this.mongo.db
+          .collection("homes")
+          .findOne({ _id: homeInsert.insertedId });
+        let accountInsert = await this.mongo.db
+          .collection("accounts")
+          .insertOne({
+            _id: req.user._id,
+            email: req.user.email,
+            name: req.body.name,
+            home: home._id,
+          });
+        let account = await this.mongo.db
+          .collection("accounts")
+          .findOne({ _id: ObjectID(accountInsert.insertedId) });
+        reply.code(200).send({ ...account, home });
+      }
+    }
+  );
+
+  fastify.get(
+    "/user/",
+    {
+      preValidation: [fastify.authenticate],
+      schema: {
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              user: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  _id: { type: "string" },
+                  email: { type: "string" },
+                },
+              },
+              account: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  _id: { type: "string" },
+                  email: { type: "string" },
+                  name: { type: "string" },
+                  home: {
+                    type: "object",
+                    nullable: true,
+                    properties: {
+                      _id: { type: "string" },
+                      name: { type: "string" },
+                      admin: { type: "string" },
+                      count: { type: "number" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async function (req, reply) {
+      let account = await this.mongo.db
+        .collection("accounts")
+        .findOne({ _id: req.user._id });
+      let home = null;
+      if (account.home) {
+        home = await this.mongo.db
+          .collection("homes")
+          .findOne({ _id: account.home });
+      }
+      reply.code(200).send({
+        user: { ...req.user, password: undefined },
+        account: { ...account, home },
+      });
     }
   );
 }

@@ -4,6 +4,9 @@ require("dotenv").config();
 const start = async () => {
   try {
     await fastify
+      .register(require("fastify-cors"), {
+        origin: true,
+      })
       .register(require("fastify-mongodb"), {
         url: `mongodb://${process.env.MONGO_USER}:${process.env.MONGO_PASSWORD}@${process.env.MONGO_SERVER}/${process.env.MONGO_DB}?authSource=admin&readPreference=primary&ssl=false`,
         forceClose: true,
@@ -15,7 +18,9 @@ const start = async () => {
       .register(require("fastify-jwt"), {
         secret: process.env.JWT_SECRET,
       })
+      .register(require("./plugins/authenticate"))
       .register(require("./plugins/routeLoader"))
+      .register(require("./plugins/utils"))
       .listen(5000, "0.0.0.0");
   } catch (err) {
     fastify.log.error(err);
