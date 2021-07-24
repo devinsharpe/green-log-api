@@ -5,7 +5,6 @@ const fp = require("fastify-plugin");
 async function configureAuthenticate(fastify, opts, done) {
   fastify.decorate("authenticate", async function (req, reply) {
     try {
-      console.log(req.headers);
       let token;
       if (req.cookies.token) {
         token = await fastify.jwt.decode(
@@ -21,7 +20,6 @@ async function configureAuthenticate(fastify, opts, done) {
           .send({ error: "Access denied. Please login to continue." });
         return;
       }
-      console.log(token);
       let session = await fastify.mongo.db.collection("sessions").findOne({
         _id: ObjectId(token.session),
         expiresAt: { $gt: getUnixTime(new Date()) },
@@ -38,7 +36,6 @@ async function configureAuthenticate(fastify, opts, done) {
         req.session = session;
       }
     } catch (err) {
-      console.log(err);
       reply
         .code(401)
         .send({ error: "Access denied. Please login to continue." });
