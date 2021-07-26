@@ -51,8 +51,8 @@ const formatPlant = (plant) => {
           : [],
       rate: plant.growth_rate,
     },
-    isVegetable: plant.vegetable,
-    isEdible: plant.edible,
+    isVegetable: plant.vegetable === "true" ? true : false,
+    isEdible: plant.edible === "true" ? true : false,
     light: plant.light !== undefined ? Number(plant.light) : -1,
     soil: {
       nutriments:
