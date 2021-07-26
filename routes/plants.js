@@ -1,3 +1,5 @@
+const { ObjectID } = require("mongodb");
+
 async function routes(fastify, options) {
   fastify.get(
     "/popular/",
@@ -35,7 +37,7 @@ async function routes(fastify, options) {
   );
 
   fastify.get(
-    "/search/:keyword/:page",
+    "/search/:keyword/",
     {
       preValidation: [fastify.authenticate],
       schema: {
@@ -66,7 +68,6 @@ async function routes(fastify, options) {
       },
     },
     async function (req, reply) {
-      console.log(req.query);
       let searchCursor = await this.mongo.db
         .collection("plants")
         .find(
@@ -92,8 +93,11 @@ async function routes(fastify, options) {
     }
   );
 
-  fastify.get("/id/:id/", function (req, reply) {
-    reply.code(200).send();
+  fastify.get("/id/:id/", async function (req, reply) {
+    let plant = await this.mongo.db
+      .collection("plants")
+      .findOne({ _id: ObjectID(req.params.id) });
+    reply.code(200).send(plant);
   });
 }
 
